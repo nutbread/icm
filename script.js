@@ -319,7 +319,7 @@
 		}
 	};
 
-	var rice_delete_checkboxes = function (nodes) {
+	var rice_checkboxes = function (nodes) {
 		var nodes = nodes || document.querySelectorAll("input[type=checkbox].checkbox"),
 			svgns = "http://www.w3.org/2000/svg",
 			i, par, sib, node, n1, n2, n3;
@@ -457,7 +457,7 @@
 			this.display_node.appendChild(n);
 			this.display_node.appendChild(this.coordinate_node);
 
-			rice_delete_checkboxes([ checkbox_node ]);
+			rice_checkboxes([ checkbox_node ]);
 
 			this.set_id(id);
 
@@ -1017,13 +1017,10 @@
 	// Execute
 	ASAP.asap(function () {
 		// Noscript
-		var nodes, i;
-
-		// Noscript
 		restyle_noscript();
 
 		// Setup editing
-		var edit = new Edit();
+		new Edit();
 	});
 
 })();
