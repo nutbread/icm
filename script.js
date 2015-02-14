@@ -4,250 +4,90 @@
 (function () {
 	"use strict";
 
-	// Module for performing actions as soon as possible
-	var ASAP = (function () {
+	// Ready state
+	var on_ready = (function () {
 
-		// Variables
-		var state = 0;
-		var callbacks_asap = [];
-		var callbacks_ready = [];
-		var callbacks_check = [];
-		var callback_check_interval = null;
-		var callback_check_interval_time = 20;
-		var on_document_readystatechange_interval = null;
+		// Vars
+		var callbacks = [],
+			check_interval = null,
+			check_interval_time = 250;
 
+		// Check if ready and run callbacks
+		var callback_check = function () {
+			if (
+				(document.readyState === "interactive" || document.readyState === "complete") &&
+				callbacks !== null
+			) {
+				// Run callbacks
+				var cbs = callbacks,
+					cb_count = cbs.length,
+					i;
 
+				// Clear
+				callbacks = null;
 
-		// Events
-		var on_document_readystatechange = function () {
-			// State check
-			if (document.readyState == "interactive") {
-				if (state == 0) {
-					// Mostly loaded
-					state = 1;
-
-					// Callbacks
-					var c = callbacks_asap;
-					callbacks_asap = null;
-					trigger_callbacks(c);
-				}
-			}
-			else if (document.readyState == "complete") {
-				// Loaded
-				state = 2;
-
-				// Callbacks
-				var c;
-				if (callbacks_asap !== null) {
-					c = callbacks_asap;
-					callbacks_asap = null;
-					trigger_callbacks(c);
+				for (i = 0; i < cb_count; ++i) {
+					cbs[i].call(null);
 				}
 
-				c = callbacks_ready;
-				callbacks_ready = null;
-				trigger_callbacks(c);
+				// Clear events and checking interval
+				window.removeEventListener("load", callback_check, false);
+				window.removeEventListener("readystatechange", callback_check, false);
 
-				// Complete
-				clear_events();
-			}
-		};
-		var on_callbacks_check = function () {
-			// Test all
-			for (var i = 0; i < callbacks_check.length; ++i) {
-				if (callback_test.call(null, callbacks_check[i])) {
-					// Remove
-					callbacks_check.splice(i, 1);
-					--i;
-				}
-			}
-
-			// Stop timer?
-			if (callbacks_check.length == 0) {
-				clearInterval(callback_check_interval);
-				callback_check_interval = null;
-			}
-		};
-		var on_callback_timeout = function (data) {
-			// Remove
-			for (var i = 0; i < callbacks_check.length; ++i) {
-				if (callbacks_check[i] === data) {
-					// Update
-					data.timeout_timer = null;
-
-					// Callback
-					if (data.timeout_callback) data.timeout_callback.call(null);
-
-					// Remove
-					callbacks_check.splice(i, 1);
-					return;
-				}
-			}
-		};
-
-		// Clear events
-		var clear_events = function () {
-			if (on_document_readystatechange_interval !== null) {
-				// Remove timer
-				clearInterval(on_document_readystatechange_interval);
-				on_document_readystatechange_interval = null;
-
-				// Remove events
-				document.removeEventListener("readystatechange", on_document_readystatechange, false);
-
-				// Clear callbacks
-				callbacks_asap = null;
-				callbacks_ready = null;
-			}
-		};
-
-		// Test callback
-		var callback_test = function (data) {
-			if (!data.condition || data.condition.call(null)) {
-				// Call
-				data.callback.call(null);
-
-				// Stop timeout
-				if (data.timeout_timer !== null) {
-					clearTimeout(data.timeout_timer);
-					data.timeout_timer = null;
+				if (check_interval !== null) {
+					clearInterval(check_interval);
+					check_interval = null;
 				}
 
 				// Okay
 				return true;
 			}
 
-			// Not called
+			// Not executed
 			return false;
 		};
-		var callback_wait = function (data) {
-			// Add to list
-			callbacks_check.push(data);
-			if (callback_check_interval === null) {
-				callback_check_interval = setInterval(on_callbacks_check, callback_check_interval_time);
-			}
 
-			// Timeout
-			if (data.timeout > 0) {
-				data.timeout_timer = setTimeout(on_callback_timeout.bind(null, data), data.timeout * 1000);
-			}
-		};
+		// Listen
+		window.addEventListener("load", callback_check, false);
+		window.addEventListener("readystatechange", callback_check, false);
 
-		// Trigger callback list
-		var trigger_callbacks = function (callback_list) {
-			for (var i = 0, j = callback_list.length; i < j; ++i) {
-				// Test
-				if (!callback_test.call(null, callback_list[i])) {
-					// Queue
-					callback_wait.call(null, callback_list[i]);
-				}
-			}
-		};
-
-		// Add callback
-		var add_callback = function (callback, condition, timeout, timeout_callback, target) {
-			var cb_data = {
-				callback: callback,
-				condition: condition || null,
-				timeout: timeout || 0,
-				timeout_callback: timeout_callback || null,
-				timeout_timer: null
-			};
-
-			if (target === null) {
-				// Test
-				if (!callback_test.call(null, cb_data)) {
-					// Queue
-					callback_wait.call(null, cb_data);
-				}
+		// Callback adding function
+		return function (cb) {
+			if (callbacks === null) {
+				// Ready to execute
+				cb.call(null);
 			}
 			else {
-				// Add
-				target.push(cb_data);
+				// Delay
+				callbacks.push(cb);
+
+				// Set a check interval
+				if (check_interval === null && callback_check() !== true) {
+					check_interval = setInterval(callback_check, check_interval_time);
+				}
 			}
-		};
-
-		// Setup events
-		on_document_readystatechange();
-		if (state < 2) {
-			document.addEventListener("readystatechange", on_document_readystatechange, false);
-			on_document_readystatechange_interval = setInterval(on_document_readystatechange, 20);
-		}
-
-
-
-		// Return functions
-		return {
-
-			/**
-				Call a function as soon as possible when the DOM is fully loaded
-				(document.readyState == "interactive")
-
-				@param callback
-					The callback to be called
-					The call format is:
-						callback.call(null)
-				@param condition
-					An additional condition to test for.
-					If this condition is falsy, a timeout interval is
-					used to continuously test it until it is true (or timed out)
-					The call format is:
-						condition.call(null)
-				@param timeout
-					If specified, a maximum time limit is given for the condition to be met
-					Must be greater than 0, units are seconds
-				@param timeout_callback
-					If specified, this is a callback which is called when the condition check
-					has timed out
-					The call format is:
-						timeout_callback.call(null)
-			*/
-			asap: function (callback, condition, timeout, timeout_callback) {
-				// Add to asap
-				add_callback.call(null, callback, condition, timeout, timeout_callback, callbacks_asap);
-			},
-			/**
-				Call a function as soon as possible when the DOM is fully loaded
-				(document.readyState == "complete")
-
-				@param callback
-					The callback to be called
-					The call format is:
-						callback.call(null)
-				@param condition
-					An additional condition to test for.
-					If this condition is falsy, a timeout interval is
-					used to continuously test it until it is true (or timed out)
-					The call format is:
-						condition.call(null)
-				@param timeout
-					If specified, a maximum time limit is given for the condition to be met
-					Must be greater than 0, units are seconds
-				@param timeout_callback
-					If specified, this is a callback which is called when the condition check
-					has timed out
-					The call format is:
-						timeout_callback.call(null)
-			*/
-			ready: function (callback, condition, timeout, timeout_callback) {
-				// Add to ready
-				add_callback.call(null, callback, condition, timeout, timeout_callback, callbacks_ready);
-			},
-
 		};
 
 	})();
 
-	var bind_function = function (callback, self) {
-		var args = Array.prototype.slice.call(arguments, 2);
+	var bind = function (callback, self) {
+		if (arguments.length > 2) {
+			var slice = Array.prototype.slice,
+				push = Array.prototype.push,
+				args = slice.call(arguments, 2);
 
-		// return callback.bind(self, args);
-		return function () {
-			var full_args = Array.prototype.slice.call(args);
-			Array.prototype.push.apply(full_args, arguments);
+			return function () {
+				var full_args = slice.call(args);
+				push.apply(full_args, arguments);
 
-			return callback.apply(self, full_args);
-		};
+				return callback.apply(self, full_args);
+			};
+		}
+		else {
+			return function () {
+				return callback.apply(self, arguments);
+			};
+		}
 	};
 	var wrap_mouseenterleave_event = (function () {
 
@@ -416,7 +256,7 @@
 			this.point_mask_node = document.createElementNS(svgns, "rect");
 			this.point_mask_node.setAttribute("width", "1");
 			this.point_mask_node.setAttribute("height", "1");
-			add_event_listener(this.event_list, this.point_mask_node, "mousedown", bind_function(on_coordinate_mask_mousedown, this.parent, this), false);
+			add_event_listener(this.event_list, this.point_mask_node, "mousedown", bind(on_coordinate_mask_mousedown, this.parent, this), false);
 
 			this.parent.preview_image_overlay_points.appendChild(this.point_node);
 			this.parent.preview_image_overlay_point_masks.appendChild(this.point_mask_node);
@@ -441,7 +281,7 @@
 			checkbox_node.className = "checkbox delete_checkbox";
 			checkbox_node.setAttribute("type", "checkbox");
 			checkbox_node.checked = true;
-			add_event_listener(this.event_list, checkbox_node, "change", bind_function(on_coordinate_delete_change, this.parent, this, checkbox_node), false);
+			add_event_listener(this.event_list, checkbox_node, "change", bind(on_coordinate_delete_change, this.parent, this, checkbox_node), false);
 
 			this.id_node = document.createElement("span");
 			this.id_node.className = "coordinate_list_entry_id";
@@ -603,43 +443,43 @@
 
 			var preview_info_stat_link_zoom_increase = document.querySelector(".preview_info_stat_link_zoom_increase"),
 				preview_info_stat_link_zoom_decrease = document.querySelector(".preview_info_stat_link_zoom_decrease"),
-				cancel_fn = bind_function(on_generic_cancel, this),
+				cancel_fn = bind(on_generic_cancel, this),
 				fn;
 
 			// File drag/drop events
-			document.addEventListener("dragover", bind_function(on_file_dragover, this), false);
-			document.addEventListener("dragleave", bind_function(on_file_dragleave, this), false);
-			document.addEventListener("drop", bind_function(on_file_drop, this), false);
+			document.addEventListener("dragover", bind(on_file_dragover, this), false);
+			document.addEventListener("dragleave", bind(on_file_dragleave, this), false);
+			document.addEventListener("drop", bind(on_file_drop, this), false);
 
 			// More events
-			this.selection_from_url.addEventListener("change", bind_function(on_selection_from_url_change, this), false);
-			this.selection_from_file.addEventListener("change", bind_function(on_selection_from_file_change, this), false);
-			this.selection_from_file_button.addEventListener("click", bind_function(on_selection_from_file_click, this), false);
-			this.drag_drop_highlight.addEventListener("click", bind_function(on_drag_drop_highlight_click, this), false);
+			this.selection_from_url.addEventListener("change", bind(on_selection_from_url_change, this), false);
+			this.selection_from_file.addEventListener("change", bind(on_selection_from_file_change, this), false);
+			this.selection_from_file_button.addEventListener("click", bind(on_selection_from_file_click, this), false);
+			this.drag_drop_highlight.addEventListener("click", bind(on_drag_drop_highlight_click, this), false);
 
-			this.preview_image_container_inner.addEventListener("mousewheel", fn = bind_function(on_image_mousewheel, this), false);
+			this.preview_image_container_inner.addEventListener("mousewheel", fn = bind(on_image_mousewheel, this), false);
 			this.preview_image_container_inner.addEventListener("DOMMouseScroll", fn, false);
 
-			preview_info_stat_link_zoom_increase.addEventListener("click", bind_function(on_zoom_change_click, this, 1), false);
-			preview_info_stat_link_zoom_decrease.addEventListener("click", bind_function(on_zoom_change_click, this, -1), false);
+			preview_info_stat_link_zoom_increase.addEventListener("click", bind(on_zoom_change_click, this, 1), false);
+			preview_info_stat_link_zoom_decrease.addEventListener("click", bind(on_zoom_change_click, this, -1), false);
 			preview_info_stat_link_zoom_increase.addEventListener("mousedown", cancel_fn, false);
 			preview_info_stat_link_zoom_decrease.addEventListener("mousedown", cancel_fn, false);
 
 			this.preview_image_size.addEventListener("mouseover", wrap_mouseenterleave_event(on_image_mouseenter, this), false);
 			this.preview_image_size.addEventListener("mouseout", wrap_mouseenterleave_event(on_image_mouseleave, this), false);
-			document.addEventListener("mousemove", bind_function(on_document_mousemove, this), false);
-			this.preview_image_size.addEventListener("mousedown", bind_function(on_image_mousedown, this), false);
-			document.addEventListener("mouseup", bind_function(on_document_mouseup, this), false);
+			document.addEventListener("mousemove", bind(on_document_mousemove, this), false);
+			this.preview_image_size.addEventListener("mousedown", bind(on_image_mousedown, this), false);
+			document.addEventListener("mouseup", bind(on_document_mouseup, this), false);
 
-			this.coordinates_modifier.addEventListener("change", bind_function(on_autoreplace_change, this), false);
-			this.coordinates_modified.addEventListener("click", bind_function(on_autoreplaced_click, this), false);
+			this.coordinates_modifier.addEventListener("change", bind(on_autoreplace_change, this), false);
+			this.coordinates_modified.addEventListener("click", bind(on_autoreplaced_click, this), false);
 
-			window.addEventListener("blur", bind_function(on_window_blur, this), false);
+			window.addEventListener("blur", bind(on_window_blur, this), false);
 
-			window.addEventListener("keydown", bind_function(on_window_keydown, this), false);
-			window.addEventListener("keyup", bind_function(on_window_keyup, this), false);
+			window.addEventListener("keydown", bind(on_window_keydown, this), false);
+			window.addEventListener("keyup", bind(on_window_keyup, this), false);
 
-			this.preview_image_container_inner.addEventListener("contextmenu", bind_function(on_image_region_contextmenu, this), false);
+			this.preview_image_container_inner.addEventListener("contextmenu", bind(on_image_region_contextmenu, this), false);
 			this.preview_image_container_inner.addEventListener("mousedown", cancel_fn, false);
 		};
 
@@ -669,7 +509,7 @@
 			) return;
 
 			if (this.disable_dragdrop_highlight_timer !== null) clearTimeout(this.disable_dragdrop_highlight_timer);
-			this.disable_dragdrop_highlight_timer = setTimeout(bind_function(disable_dragdrop_highlight, this), 50);
+			this.disable_dragdrop_highlight_timer = setTimeout(bind(disable_dragdrop_highlight, this), 50);
 
 			event.preventDefault();
 			event.stopPropagation();
@@ -989,8 +829,8 @@
 				this.image.node = document.createElement("img");
 				this.image.node.className = "preview_image";
 				this.image.node.setAttribute("alt", "");
-				add_event_listener(this.image.event_list, this.image.node, "load", bind_function(on_image_load, this), false);
-				add_event_listener(this.image.event_list, this.image.node, "error", bind_function(on_image_error, this), false);
+				add_event_listener(this.image.event_list, this.image.node, "load", bind(on_image_load, this), false);
+				add_event_listener(this.image.event_list, this.image.node, "error", bind(on_image_error, this), false);
 
 				this.preview_image_size.insertBefore(this.image.node, this.preview_image_overlay);
 				this.image.node.setAttribute("src", url);
@@ -1015,7 +855,7 @@
 
 
 	// Execute
-	ASAP.asap(function () {
+	on_ready(function () {
 		// Noscript
 		restyle_noscript();
 
